@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>SAEB Interativo</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+    .speech-bubble {
+      position: absolute;
+      background: rgba(255,255,255,0.95);
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid #333;
+      pointer-events: none;
+      font-size: 14px;
+      max-width: 180px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+
+  <!-- Bibliotecas -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@18.6.4/dist/tween.umd.js"></script>
+
+  <script>
+    // Cena, câmera e render
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xa0a0a0);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 6, 12);
+
+    const renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Luz
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(5,10,7.5);
+    scene.add(light);
+
+    // Chão
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(30,30),
+      new THREE.MeshStandardMaterial({color:0x90ee90})
+    );
+    plane.rotation.x = -Math.PI/2;
+    scene.add(plane);
+
+    // Controles
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0,1,0);
+    controls.update();
+
+    // Avatares e balões
+    const loader = new THREE.GLTFLoader();
+    const avatars = [];
+    const speechBubbles = [];
+
+    const avatarData = [
+      {name:'João', area:'Português', message:'Oi! Vou explicar a prova de Português do SAEB. Aqui você precisa interpretar textos e responder questões de gramática.', path:[{x:-6,z:0},{x:-3,z:2},{x:0,z:0}]},
+      {name:'Maria', area:'Matemática', message:'Olá! Eu explico Matemática. Resolva problemas, raciocínio lógico e atenção às operações.', path:[{x:6,z:0},{x:3,z:-2},{x:0,z:0}]},
+      {name:'Pedro', area:'Ciências', message:'Oi! Eu falo de Ciências. Observe fenômenos da natureza, corpo humano e experimentos simples.', path:[{x:-6,z:-4},{x:-3,z:-2},{x:0,z:0}]},
+      {name:'Ana', area:'Dicas', message:'Oi! Aqui vão dicas importantes: organize seu tempo, leia com atenção e revise suas respostas.', path:[{x:6,z:-4},{x:3,z:-2},{x:0,z:0}]},
+      {name:'Lucas', area:'Motivação', message:'Olá! Lembre-se de manter a calma, concentração e boa sorte! Você consegue!', path:[{x:0,z:6},{x:0,z:3},{x:0,z:0}]}
+    ];
+
+    avatarData.forEach((data)=>{
+      loader.load(data.file || 'https://models.babylonjs.com/CesiumMan.glb', function(gltf){
+        const avatar = gltf.scene;
+        avatar.position.set(data.path[0].x,0,data.path[0].z);
+        avatar.scale.set(0.5,0.5,0.5);
+        scene.add(avatar);
+        avatars.push({object:avatar, message:data.message, path:data.path, index:0});
+
+        // Criar balão de fala
+        const bubble = document.createElement('div');
+        bubble.className = 'speech-bubble';
+        bubble.innerText = '';
+        document.body.appendChild(bubble);
+        speechBubbles.push(bubble);
+
+        // Iniciar movimento
+        moveAvatar(avatars[avatars.length-1], bubble);
+      });
+    });
+
+    // Fala e balão
+    function speak(text,bubble){
+      bubble.innerText = text;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'pt-BR';
+      speechSynthesis.speak(utter);
+      setTimeout(()=>{ bubble.innerText=''; }, 5000);
+    }
+
+    // Movimento pelo caminho
+    function moveAvatar(avatarObj,bubble){
+      const path = avatarObj.path;
+      const nextIndex = (avatarObj.index+1)%path.length;
+      new TWEEN.Tween(avatarObj.object.position)
+        .to({x:path[nextIndex].x, z:path[nextIndex].z}, 4000)
+        .onStart(()=> speak(avatarObj.message, bubble))
+        .onComplete(()=>{
+          avatarObj.index = nextIndex;
+          setTimeout(()=> moveAvatar(avatarObj, bubble), 1000);
+        })
+        .start();
+    }
+
+    // Atualiza balões de fala
+    function updateBubbles(){
+      avatars.forEach((avatarObj,i)=>{
+        const vector = new THREE.Vector3();
+        avatarObj.object.getWorldPosition(vector);
+        vector.y += 2;
+        vector.project(camera);
+
+        const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+        speechBubbles[i].style.transform = `translate(-50%,-50%) translate(${x}px,${y}px)`;
+      });
+    }
+
+    // Loop
+    function animate(time){
+      requestAnimationFrame(animate);
+      TWEEN.update(time);
+      updateBubbles();
+      renderer.render(scene,camera);
+    }
+    animate();
+
+    // Ajuste de tela
+    window.addEventListener('resize',()=>{
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth,window.innerHeight);
+    });
+  </script>
+</body>
+	</html>
+	
